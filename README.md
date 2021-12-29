@@ -8,9 +8,7 @@ I made some modifications for my use.
 
 # YouTube
 
-
-
-[![](https://img.youtube.com/vi/gD3KpWGXoV4&feature=youtu.be/0.jpg)](https://www.youtube.com/watch?v=gD3KpWGXoV4&feature=youtu.be)
+[![](https://img.youtube.com/vi/gD3KpWGXoV4/0.jpg)](https://www.youtube.com/watch?v=gD3KpWGXoV4)
 
 or click here:
 https://youtu.be/gD3KpWGXoV4
