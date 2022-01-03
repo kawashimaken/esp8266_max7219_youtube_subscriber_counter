@@ -18,16 +18,6 @@
 
 byte scr[NUM_MAX*8 + 8]; // +8 for scrolled char
 
-void sendCmd(int addr, byte cmd, byte data)
-{
-  digitalWrite(CS_PIN, LOW);
-  for (int i = NUM_MAX-1; i>=0; i--) {
-    shiftOut(DIN_PIN, CLK_PIN, MSBFIRST, i==addr ? cmd : 0);
-    shiftOut(DIN_PIN, CLK_PIN, MSBFIRST, i==addr ? data : 0);
-  }
-  digitalWrite(CS_PIN, HIGH);
-}
-
 void sendCmdAll(byte cmd, byte data)
 {
   digitalWrite(CS_PIN, LOW);
@@ -38,12 +28,51 @@ void sendCmdAll(byte cmd, byte data)
   digitalWrite(CS_PIN, HIGH);
 }
 
-void refresh(int addr) {
-  for (int i = 0; i < 8; i++)
-    sendCmd(addr, i + CMD_DIGIT0, scr[addr * 8 + i]);
+void refreshAllRot270() 
+{
+  byte mask = 0x01;
+  for (int c = 0; c < 8; c++) {
+    digitalWrite(CS_PIN, LOW);
+    for(int i=NUM_MAX-1; i>=0; i--) {
+      byte bt = 0;
+      for(int b=0; b<8; b++) {
+        bt<<=1;
+        if(scr[i * 8 + b] & mask) bt|=0x01;
+      }
+      shiftOut(DIN_PIN, CLK_PIN, MSBFIRST, CMD_DIGIT0 + c);
+      shiftOut(DIN_PIN, CLK_PIN, MSBFIRST, bt);
+    }
+    digitalWrite(CS_PIN, HIGH);
+    mask<<=1;
+  }
 }
 
+void refreshAllRot90() 
+{
+  byte mask = 0x80;
+  for (int c = 0; c < 8; c++) {
+    digitalWrite(CS_PIN, LOW);
+    for(int i=NUM_MAX-1; i>=0; i--) {
+      byte bt = 0;
+      for(int b=0; b<8; b++) {
+        bt>>=1;
+        if(scr[i * 8 + b] & mask) bt|=0x80;
+      }
+      shiftOut(DIN_PIN, CLK_PIN, MSBFIRST, CMD_DIGIT0 + c);
+      shiftOut(DIN_PIN, CLK_PIN, MSBFIRST, bt);
+    }
+    digitalWrite(CS_PIN, HIGH);
+    mask>>=1;
+  }
+}
+
+
 void refreshAll() {
+#if ROTATE==270
+  refreshAllRot270();
+#elif ROTATE==90
+  refreshAllRot90();
+#else
   for (int c = 0; c < 8; c++) {
     digitalWrite(CS_PIN, LOW);
     for(int i=NUM_MAX-1; i>=0; i--) {
@@ -51,7 +80,8 @@ void refreshAll() {
       shiftOut(DIN_PIN, CLK_PIN, MSBFIRST, scr[i * 8 + c]);
     }
     digitalWrite(CS_PIN, HIGH);
- }
+  }
+#endif
 }
 
 void clr()
@@ -62,11 +92,6 @@ void clr()
 void scrollLeft()
 {
   for(int i=0; i < NUM_MAX*8+7; i++) scr[i] = scr[i+1];
-}
-
-void invert()
-{
-  for (int i = 0; i < NUM_MAX*8; i++) scr[i] = ~scr[i];
 }
 
 void initMAX7219()

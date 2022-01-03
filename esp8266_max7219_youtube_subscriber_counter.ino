@@ -1,7 +1,7 @@
 /*
   Code for the video:
-  https://youtu.be/mn9L85bhyjI
-  (c)2016 Pawel A. Hernik
+  https://youtu.be/bePgZIXHSkM
+  (c)2017 Pawel A. Hernik
  
   ESP-01 pinout:
 
@@ -20,12 +20,10 @@
 
 #include "Arduino.h"
 #include <ESP8266WiFi.h>
+#include <ArduinoJson.h>
 
-WiFiClient client;
-
-#define NUM_MAX 7
-#define MAX_CHAR 7
-#define ROTATE 0
+#define NUM_MAX 4
+#define ROTATE 90
 
 // for ESP-01 module
 //#define DIN_PIN 2 // D4
@@ -43,9 +41,10 @@ WiFiClient client;
 // =======================================================================
 // Your config below!
 // =======================================================================
-const char* ssid     = "xxxxxx";      // SSID of local network
-const char* password = "yyyyyy";    // Password on network
-const char* YTchannel = "zzzzzz";   // Your YouTube user id
+const char* ssid     = "XXXX";               // SSID of local network
+const char* password = "YYYY";             // Password on network
+String ytApiV3Key = "ZZZZ";                // YouTube Data API v3 key generated here: https://console.developers.google.com
+String channelId = "AAAA";   // YT channel id
 // =======================================================================
 
 void setup() 
@@ -56,58 +55,113 @@ void setup()
   sendCmdAll(CMD_INTENSITY,0);
   Serial.print("Connecting WiFi ");
   WiFi.begin(ssid, password);
-  printStringWithShift("... WiFi ...   ",20);
+  printStringWithShift(" WiFi ...~",15,font,' ');
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print("."); delay(500);
   }
   Serial.println("");
   Serial.print("Connected: "); Serial.println(WiFi.localIP());
+  Serial.println("Getting data ...");
+  printStringWithShift(" YT ...~",15,font,' ');
 }
 // =======================================================================
 
+long viewCount, viewCount24h=-1, viewsGain24h;
+long subscriberCount, subscriberCount1h=-1, subscriberCount24h=-1, subsGain1h=0, subsGain24h=0;
+long videoCount;
+int cnt = 0;
+unsigned long time1h, time24h;
+long localEpoc = 0;
+long localMillisAtUpdate = 0;
+int h, m, s;
+String date;
+
 void loop()
 {
-  Serial.println("Getting data ...");
-  printStringWithShift("  ... YT ...    ",20);
-  int subs, views, cnt = 0;
-  String yt1,yt2;
-  while(1) {
-    if(!cnt--) {
-      cnt = 50;  // data is refreshed every 50 loops
-      if(getYTSubs(YTchannel,&subs,&views)==0) {
-        yt1 = "     SUBSCRIBERS:      "+String(subs)+" ";
-        yt2 = "      VIEWS:   "+String(views);
-      } else {
-        yt1 = "   YouTube";
-        yt2 = "   Error!";
+  if(cnt<=0) {
+    if(getYTData()==0) {
+      cnt = 1;  // data is refreshed every 50 loops
+      if(subscriberCount1h<0) {
+        time1h = time24h = millis();
+        subscriberCount1h = subscriberCount24h = subscriberCount;
+        viewCount24h = viewCount;
       }
+      if(millis()-time1h>1000*60*60) {
+        time1h = millis();
+        subscriberCount1h = subscriberCount;
+      }
+      if(millis()-time24h>1000*60*60*24) {
+        time24h = millis();
+        subscriberCount24h = subscriberCount;
+        viewCount24h = viewCount;
+      }
+      subsGain1h = subscriberCount-subscriberCount1h;
+      subsGain24h = subscriberCount-subscriberCount24h;
+      viewsGain24h = viewCount-viewCount24h;
     }
-    printStringWithShift(yt1.c_str(),20);
-    delay(3000);
-    printStringWithShift(yt2.c_str(),20);
-    delay(3000);
   }
+  cnt--;
+
+  int del = 3000;
+  int scrollDel = 40;
+  
+  
+  printStringWithShift("  Subscribers: ",scrollDel,font,' '); 
+  printValueWithShift(subscriberCount,scrollDel,0);
+  delay(del);
+  if(subsGain1h) {
+    printStringWithShift("  Subscribers gain 1h: ",scrollDel,font,' '); 
+    printValueWithShift(subsGain1h,scrollDel,1);
+    delay(del);
+  }
+  if(subsGain24h) {
+    printStringWithShift("  Subscribers gain 24h: ",scrollDel,font,' '); 
+    printValueWithShift(subsGain24h,scrollDel,1);
+    delay(del);
+  }
+  printStringWithShift("  Views: ",scrollDel,font,' ');
+  printValueWithShift(viewCount,scrollDel,0);
+  delay(del);
+  if(viewsGain24h) {
+    printStringWithShift("  Subscribers gain 24h: ",scrollDel,font,' '); 
+    printValueWithShift(subsGain24h,scrollDel,1);
+    delay(del);
+  }
+  printStringWithShift("  Videos: ",scrollDel,font,' '); 
+  printValueWithShift(videoCount,scrollDel,0);
+  delay(del);
 }
+// =======================================================================
+
+int dualChar = 0;
+
+// =======================================================================
+
+int charWidth(char ch, const uint8_t *data)
+{
+  int len = pgm_read_byte(data);
+  return pgm_read_byte(data + 1 + ch * len);
+}
+
 // =======================================================================
 
 int showChar(char ch, const uint8_t *data)
 {
   int len = pgm_read_byte(data);
   int i,w = pgm_read_byte(data + 1 + ch * len);
+  scr[NUM_MAX*8] = 0;
   for (i = 0; i < w; i++)
-    scr[NUM_MAX*8 + i] = pgm_read_byte(data + 1 + ch * len + 1 + i);
-  scr[NUM_MAX*8 + i] = 0;
+    scr[NUM_MAX*8+i+1] = pgm_read_byte(data + 1 + ch * len + 1 + i);
   return w;
 }
 
 // =======================================================================
 
-
-void printCharWithShift(unsigned char c, int shiftDelay) {
-  
-  if (c < ' ' || c > MAX_CHAR) return;
-  c -= 32;
-  int w = showChar(c, font);
+void printCharWithShift(unsigned char c, int shiftDelay, const uint8_t *data, int offs) 
+{
+  if(c < offs || c > MAX_CHAR) return;
+  c -= offs;
+  int w = showChar(c, data);
   for (int i=0; i<w+1; i++) {
     delay(shiftDelay);
     scrollLeft();
@@ -117,55 +171,101 @@ void printCharWithShift(unsigned char c, int shiftDelay) {
 
 // =======================================================================
 
-void printStringWithShift(const char* s, int shiftDelay){
-  while (*s) {
-    printCharWithShift(*s++, shiftDelay);
+void printStringWithShift(const char *s, int shiftDelay, const uint8_t *data, int offs)
+{
+  while(*s) printCharWithShift(*s++, shiftDelay, data, offs);
+}
+
+// =======================================================================
+// printValueWithShift():
+// converts int to string
+// centers string on the display
+// chooses proper font for string/number length
+// can display sign - or +
+void printValueWithShift(long val, int shiftDelay, int sign)
+{
+  const uint8_t *digits = digits5x7;       // good for max 5 digits
+  if(val>1999999) digits = digits3x7;      // good for max 8 digits
+  else if(val>99999) digits = digits4x7;   // good for max 6-7 digits
+  String str = String(val);
+  if(sign) {
+    if(val<0) str=";"+str; else str="<"+str;
   }
+  const char *s = str.c_str();
+  int wd = 0;
+  while(*s) wd += 1+charWidth(*s++ - '0', digits);
+  wd--;
+  int wdL = (NUM_MAX*8 - wd)/2;
+  int wdR = NUM_MAX*8 - wdL - wd;
+  //Serial.println(wd); Serial.println(wdL); Serial.println(wdR);
+  s = str.c_str();
+  while(wdL>0) { printCharWithShift(':', shiftDelay, digits, '0'); wdL--; }
+  while(*s) printCharWithShift(*s++, shiftDelay, digits, '0');
+  while(wdR>0) { printCharWithShift(':', shiftDelay, digits, '0'); wdR--; }
 }
 
 // =======================================================================
-unsigned int convToInt(const char *txt)
-{
-  unsigned int val = 0;
-  for(int i=0; i<strlen(txt); i++)
-    if(isdigit(txt[i])) val=val*10+(txt[i]&0xf);
-  return val;
-}
-// =======================================================================
 
-const char* ytHost = "www.youtube.com";
-int getYTSubs(const char *channelId, int *pSubs, int *pViews)
+const char *ytHost = "www.googleapis.com";
+
+int getYTData()
 {
-  if(!pSubs || !pViews) return -2;
   WiFiClientSecure client;
   Serial.print("connecting to "); Serial.println(ytHost);
-//  if (!client.connect(ytHost, 443)) {
-//    Serial.println("connection failed");
-//    return -1;
-//  }
-  client.print(String("GET /channel/") + String(channelId) +"/about HTTP/1.1\r\n" + "Host: " + ytHost + "\r\nConnection: close\r\n\r\n");
+  client.setInsecure();
+  Serial.println(client.connect(ytHost,443));
+  
+  if (!client.connect(ytHost,443)) {
+    Serial.println("connection failed");
+    return -1;
+  }
+  String cmd = String("GET /youtube/v3/channels?part=statistics&id=") + channelId + "&key=" + ytApiV3Key+ " HTTP/1.1\r\n" +
+                "Host: " + ytHost + "\r\nUser-Agent: ESP8266/1.1\r\nConnection: close\r\n\r\n";
+  Serial.println(cmd);
+  client.print(cmd);
+
   int repeatCounter = 10;
   while (!client.available() && repeatCounter--) {
     Serial.println("y."); delay(500);
   }
-  int idxS, idxE, statsFound = 0;
-  *pSubs = *pViews = 0;
+  String line,buf="";
+  int startJson=0, dateFound=0;
   while (client.connected() && client.available()) {
-    String line = client.readStringUntil('\n');
-    if(statsFound == 0) {
-      statsFound = (line.indexOf("about-stats")>0);
-    } else {
-      idxS = line.indexOf("<b>");
-      idxE = line.indexOf("</b>");
-      String val = line.substring(idxS + 3, idxE);
-      if(!*pSubs)
-        *pSubs = convToInt(val.c_str());
-      else {
-        *pViews = convToInt(val.c_str());
-        break;
-      }
+    line = client.readStringUntil('\n');
+    Serial.println(line);
+    if(line[0]=='{') startJson=1;
+    if(startJson) {
+      for(int i=0;i<line.length();i++)
+        if(line[i]=='[' || line[i]==']') line[i]=' ';
+      buf+=line+"\n";
+    }
+    if(!dateFound && line.startsWith("Date: ")) {
+      dateFound = 1;
+      date = line.substring(6, 22);
+      h = line.substring(23, 25).toInt();
+      m = line.substring(26, 28).toInt();
+      s = line.substring(29, 31).toInt();
+      localMillisAtUpdate = millis();
+      localEpoc = (h * 60 * 60 + m * 60 + s);
     }
   }
+  Serial.println(buf);
   client.stop();
+
+  DynamicJsonBuffer jsonBuf;
+  JsonObject &root = jsonBuf.parseObject(buf);
+  if (!root.success()) {
+    Serial.println("parseObject() failed");
+    printStringWithShift("json error!",30,font,' ');
+    delay(10);
+    return -1;
+  }
+  viewCount       = root["items"]["statistics"]["viewCount"];
+  subscriberCount = root["items"]["statistics"]["subscriberCount"];
+  videoCount      = root["items"]["statistics"]["videoCount"];
+  Serial.println(subscriberCount);
   return 0;
 }
+
+
+// =======================================================================
